@@ -5,7 +5,7 @@ train:
   subset: 'train'
   fine_tune: false
   seg_length: 10
-  sr: 24000
+  sr: 16000 # 24000
   aug_config:
     phase180:
         p: 0.5
@@ -17,7 +17,7 @@ train:
   # cfg_prob: 0.1
 
 train_frames: 500
-sr: 24000
+sr: 16000 # 24000
 
 val_dir: 'your audio dir/amaai-lab-MusicBench/val/'
 val_meta: 'data/amaai-lab-MusicBench/val.csv'
