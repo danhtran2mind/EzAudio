@@ -19,7 +19,7 @@ train:
 train_frames: 500
 sr: 16000 # 24000
 
-val_dir: 'your audio dir/amaai-lab-MusicBench/val/'
+val_dir: 'data/amaai-lab-MusicBench/val/'
 val_meta: 'data/amaai-lab-MusicBench/val.csv'
 test_dir: 'data/amaai-lab-MusicBench/test/'
 test_meta: 'data/amaai-lab-MusicBench/test.csv'
