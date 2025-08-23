@@ -4,6 +4,8 @@ torchaudio==2.6.0
 torchvision==0.21.0
 accelerate==1.8.1
 transformers==4.52.4
+datasets==3.5.0
+huggingface-hub==0.32.2
 alias_free_torch==0.0.6
 diffusers==0.34.0
 einops==0.8.1
