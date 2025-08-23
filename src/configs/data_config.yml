@@ -1,7 +1,7 @@
 # dataset_config.yml
 train:
-  data_dir: 'data/t2adata_24k/train/'
-  meta_dir: 'data/t2adata_24k/train.csv'
+  data_dir: 'data/amaai-lab-MusicBench/train/'
+  meta_dir: 'data/amaai-lab-MusicBench/train.csv'
   subset: 'train'
   fine_tune: false
   seg_length: 10
@@ -12,14 +12,14 @@ train:
   mono: false
   norm: true
   prepare_mode: false
-  # text_path: '/home/jerry/Projects/Dataset/t2adata_24k/t5_l'
+  # text_path: '/home/jerry/Projects/Dataset/amaai-lab-MusicBench/t5_l'
   # uncond_path: 'dataset/uncond_t5_l.pt'
   # cfg_prob: 0.1
 
 train_frames: 500
 sr: 24000
 
-val_dir: 'your audio dir/t2adata_24k/val/'
-val_meta: 'data/t2adata_24k/val.csv'
-test_dir: 'data/t2adata_24k/test/'
-test_meta: 'data/t2adata_24k/test.csv'
+val_dir: 'your audio dir/amaai-lab-MusicBench/val/'
+val_meta: 'data/amaai-lab-MusicBench/val.csv'
+test_dir: 'data/amaai-lab-MusicBench/test/'
+test_meta: 'data/amaai-lab-MusicBench/test.csv'
