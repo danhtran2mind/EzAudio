@@ -83,7 +83,7 @@ class EzAudio:
         # Create parent directories if they don't exist
         os.makedirs(local_dir, exist_ok=True)
         
-        if not local_path.exists():
+        if os.path.exists(file_path):
             print(f"Downloading from {url} to {local_path}...")
             try:
                 downloaded_path = hf_hub_download(
