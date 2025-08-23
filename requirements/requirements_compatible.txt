@@ -1,0 +1,19 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0
+torchaudio==2.6.0
+torchvision==0.21.0
+accelerate==1.8.1
+transformers==4.52.4
+alias_free_torch==0.0.6
+diffusers==0.34.0
+einops==0.8.1
+librosa==0.11.0
+pandas==2.2.3
+PyYAML==6.0.2
+soundfile==0.13.1
+tqdm==4.67.1
+flatten_dict==0.4.2
+tensorboard==2.18.0
+randomname==0.2.1
+argbind==0.3.9
+sentencepiece==0.2.0
