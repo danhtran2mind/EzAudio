@@ -98,7 +98,7 @@ class EzAudio:
         else:
             print(f"Checkpoint already exists at {local_path}")
         
-        return local_dir
+        return local_path
 
     # Load model and configs
     def load_models(self, config_name, ckpt_path, vae_path, device):
