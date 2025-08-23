@@ -9,7 +9,7 @@ adam_epsilon: 1.0e-08
 warmup: 5000
 grad_clip: 1.0
 snr_gamma: null
-batch_size: 16
+batch_size: 2 # 2
 accumulation_steps: 2
 # snr_gamma: 5.0 is used in tango, not stable, might use it in later experiment
 # real batch = n_gpu * batch * accumulation
