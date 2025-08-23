@@ -78,7 +78,7 @@ class EzAudio:
         filename = '/'.join(url.split('/')[7:])  # e.g., ckpts/vae/1m.pt
     
         # Create directories if they don't exist
-        local_dir = os.path.dirname(file_path)
+        local_dir = os.path.dirname(local_path)
         
         # Create parent directories if they don't exist
         os.makedirs(local_dir, exist_ok=True)
