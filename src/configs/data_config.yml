@@ -1,7 +1,7 @@
 # dataset_config.yml
 train:
-  data_dir: 'data/t2adata_24k/'
-  meta_dir: 'data/mini_dataset_index.csv'
+  data_dir: 'data/t2adata_24k/train/'
+  meta_dir: 'data/t2adata_24k/train.csv'
   subset: 'train'
   fine_tune: false
   seg_length: 10
@@ -19,7 +19,7 @@ train:
 train_frames: 500
 sr: 24000
 
-val_dir: 'your audio dir/t2adata_24k/'
-val_meta: 'your meta csv/val.csv'
-test_dir: 'your audio dir/t2adata_24k/'
-test_meta: 'your meta csv/test.csv'
+val_dir: 'your audio dir/t2adata_24k/val/'
+val_meta: 'data/t2adata_24k/val.csv'
+test_dir: 'data/t2adata_24k/test/'
+test_meta: 'data/t2adata_24k/test.csv'
