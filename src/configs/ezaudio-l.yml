@@ -37,6 +37,7 @@ model:
 
 autoencoder:
   name: stable_vae
+  path: ckpts/vae/1m.pt
   dim: 128
   sr: 24000
   latent_sr: 50
@@ -62,3 +63,4 @@ diff:
 
 opt: !include opt_config.yml
 data: !include data_config.yml
+
