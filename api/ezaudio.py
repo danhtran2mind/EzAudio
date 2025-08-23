@@ -70,7 +70,7 @@ class EzAudio:
     #     return local_path
     
 
-    def download_ckpt(model_dict):
+    def download_ckpt(slf, model_dict):
         local_path = Path(model_dict['path'])
         url = model_dict['url']
         
