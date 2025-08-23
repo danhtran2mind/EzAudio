@@ -87,7 +87,7 @@ class EzAudio:
                 downloaded_path = hf_hub_download(
                     repo_id=repo_id,
                     filename=filename,
-                    local_dir=local_path.parent,
+                    local_dir=local_path,
                     local_dir_use_symlinks=False
                 )
                 print(f"Downloaded checkpoint to {downloaded_path}")
