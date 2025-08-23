@@ -13,6 +13,11 @@ from src.models.conditioners import MaskDiT
 from src.modules.autoencoder_wrapper import Autoencoder
 from src.inference import inference
 from src.utils import load_yaml_with_includes
+from pathlib import Path
+import wget
+from tqdm import tqdm
+import os
+
 
 MAX_SEED = np.iinfo(np.int32).max
 
@@ -41,25 +46,53 @@ class EzAudio:
         (self.autoencoder, self.unet, self.tokenizer,
          self.text_encoder, self.noise_scheduler, self.params) = self.load_models(config_name, ckpt_path, vae_path, device)
 
+    # def download_ckpt(self, model_dict):
+    #     local_path = Path(model_dict['path'])
+    #     url = model_dict['url']
+    #     # Create directories if they don't exist
+    #     local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    #     if not local_path.exists() and url:
+    #         print(f"Downloading from {url} to {local_path}...")
+
+    #         def progress_bar(block_num, block_size, total_size):
+    #             downloaded = block_num * block_size
+    #             progress = downloaded / total_size * 100
+    #             sys.stdout.write(f"\rProgress: {progress:.2f}%")
+    #             sys.stdout.flush()
+    #         try:
+    #             urllib.request.urlretrieve(url, local_path, reporthook=progress_bar)
+    #             print(f"Downloaded checkpoint to {local_path}")
+    #         except Exception as e:
+    #             print(f"Error downloading checkpoint: {e}")
+    #     else:
+    #         print(f"Checkpoint already exists at {local_path}")
+    #     return local_path
     def download_ckpt(self, model_dict):
         local_path = Path(model_dict['path'])
         url = model_dict['url']
         # Create directories if they don't exist
         local_path.parent.mkdir(parents=True, exist_ok=True)
-
+    
         if not local_path.exists() and url:
             print(f"Downloading from {url} to {local_path}...")
-
-            def progress_bar(block_num, block_size, total_size):
-                downloaded = block_num * block_size
-                progress = downloaded / total_size * 100
-                sys.stdout.write(f"\rProgress: {progress:.2f}%")
-                sys.stdout.flush()
             try:
-                urllib.request.urlretrieve(url, local_path, reporthook=progress_bar)
-                print(f"Downloaded checkpoint to {local_path}")
+                # Custom callback for wget to integrate with tqdm
+                def bar_custom(current, total, width=80):
+                    if not hasattr(bar_custom, 'progress'):
+                        bar_custom.progress = tqdm(total=total, unit='B', unit_scale=True, desc="Downloading")
+                    bar_custom.progress.n = current
+                    bar_custom.progress.refresh()
+                    if current >= total:
+                        bar_custom.progress.close()
+    
+                # Download using wget with the custom progress bar
+                wget.download(url, out=str(local_path), bar=bar_custom)
+                print(f"\nDownloaded checkpoint to {local_path}")
             except Exception as e:
                 print(f"Error downloading checkpoint: {e}")
+                if hasattr(bar_custom, 'progress'):
+                    bar_custom.progress.close()
         else:
             print(f"Checkpoint already exists at {local_path}")
         return local_path
