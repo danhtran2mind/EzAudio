@@ -17,7 +17,7 @@ from pathlib import Path
 import wget
 from tqdm import tqdm
 import os
-
+from huggingface_hub import hf_hub_download
 
 MAX_SEED = np.iinfo(np.int32).max
 
@@ -68,33 +68,36 @@ class EzAudio:
     #     else:
     #         print(f"Checkpoint already exists at {local_path}")
     #     return local_path
-    def download_ckpt(self, model_dict):
+    
+
+    def download_ckpt(model_dict):
         local_path = Path(model_dict['path'])
         url = model_dict['url']
+        
+        # Extract repo_id and filename from the URL
+        # Example URL: https://huggingface.co/OpenSound/EzAudio/resolve/main/ckpts/s3/ezaudio_s3_xl.pt
+        repo_id = '/'.join(url.split('/')[3:5])  # e.g., OpenSound/EzAudio
+        filename = '/'.join(url.split('/')[7:])  # e.g., ckpts/s3/ezaudio_s3_xl.pt
+    
         # Create directories if they don't exist
         local_path.parent.mkdir(parents=True, exist_ok=True)
-    
-        if not local_path.exists() and url:
+        
+        if not local_path.exists():
             print(f"Downloading from {url} to {local_path}...")
             try:
-                # Custom callback for wget to integrate with tqdm
-                def bar_custom(current, total, width=80):
-                    if not hasattr(bar_custom, 'progress'):
-                        bar_custom.progress = tqdm(total=total, unit='B', unit_scale=True, desc="Downloading")
-                    bar_custom.progress.n = current
-                    bar_custom.progress.refresh()
-                    if current >= total:
-                        bar_custom.progress.close()
-    
-                # Download using wget with the custom progress bar
-                wget.download(url, out=str(local_path), bar=bar_custom)
-                print(f"\nDownloaded checkpoint to {local_path}")
+                # Download using hf_hub_download
+                downloaded_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=filename,
+                    local_dir=local_path.parent,
+                    local_dir_use_symlinks=False
+                )
+                print(f"Downloaded checkpoint to {downloaded_path}")
             except Exception as e:
                 print(f"Error downloading checkpoint: {e}")
-                if hasattr(bar_custom, 'progress'):
-                    bar_custom.progress.close()
         else:
             print(f"Checkpoint already exists at {local_path}")
+        
         return local_path
 
     # Load model and configs
