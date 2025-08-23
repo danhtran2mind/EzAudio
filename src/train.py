@@ -39,8 +39,8 @@ def parse_args():
     # Log and random seed
     parser.add_argument('--random-seed', type=int, default=2024)
     parser.add_argument('--log-step', type=int, default=100)
-    parser.add_argument('--log-dir', type=str, default='../logs/')
-    parser.add_argument('--save-dir', type=str, default='../ckpts/')
+    parser.add_argument('--log-dir', type=str, default='./logs/')
+    parser.add_argument('--save-dir', type=str, default='./ckpts/')
 
     # fine-tune settings
     parser.add_argument('--ckpt', type=str, default=None)
