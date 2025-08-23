@@ -17,3 +17,4 @@ randomname
 argbind
 sentencepiece
 accelerate
+git+https://github.com/descriptinc/audiotools.git
