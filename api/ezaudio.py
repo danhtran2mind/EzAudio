@@ -70,7 +70,7 @@ class EzAudio:
     #     return local_path
 
     def download_ckpt(self, model_dict):
-        local_path = Path(model_dict['path'])
+        local_path = model_dict['path']
         url = model_dict['url']
         
         # Extract repo_id and filename from the URL
@@ -78,7 +78,10 @@ class EzAudio:
         filename = '/'.join(url.split('/')[7:])  # e.g., ckpts/vae/1m.pt
     
         # Create directories if they don't exist
-        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_dir = os.path.dirname(file_path)
+        
+        # Create parent directories if they don't exist
+        os.makedirs(local_dir, exist_ok=True)
         
         if not local_path.exists():
             print(f"Downloading from {url} to {local_path}...")
@@ -86,7 +89,7 @@ class EzAudio:
                 downloaded_path = hf_hub_download(
                     repo_id=repo_id,
                     filename=filename,
-                    local_dir=local_path,
+                    local_dir=local_dir,
                     local_dir_use_symlinks=False
                 )
                 print(f"Downloaded checkpoint to {downloaded_path}")
@@ -95,7 +98,7 @@ class EzAudio:
         else:
             print(f"Checkpoint already exists at {local_path}")
         
-        return local_path
+        return local_dir
 
     # Load model and configs
     def load_models(self, config_name, ckpt_path, vae_path, device):
