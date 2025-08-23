@@ -77,11 +77,11 @@ class EzAudio:
         repo_id = '/'.join(url.split('/')[3:5])  # e.g., OpenSound/EzAudio
         filename = '/'.join(url.split('/')[7:])  # e.g., ckpts/vae/1m.pt
     
-        # Create directories if they don't exist
-        local_dir = os.path.dirname(local_path)
+        # # Create directories if they don't exist
+        # local_dir = os.path.dirname(local_path)
         
-        # Create parent directories if they don't exist
-        os.makedirs(local_dir, exist_ok=True)
+        # # Create parent directories if they don't exist
+        # os.makedirs(local_dir, exist_ok=True)
         
         if not os.path.exists(local_path):
             print(f"Downloading from {url} to {local_path}...")
@@ -89,7 +89,7 @@ class EzAudio:
                 downloaded_path = hf_hub_download(
                     repo_id=repo_id,
                     filename=filename,
-                    local_dir=local_dir,
+                    local_dir=".",
                     local_dir_use_symlinks=False
                 )
                 print(f"Downloaded checkpoint to {downloaded_path}")
