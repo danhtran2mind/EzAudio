@@ -1,3 +1,7 @@
+torch
+torchaudio
+datasets>=3.5.0,<4.0.0
+huggingface-hub>=0.32.2
 alias_free_torch
 diffusers
 einops
@@ -8,7 +12,6 @@ soundfile
 tqdm
 transformers
 vector_quantize_pytorch
-torchaudio
 julius
 torch_stoi
 flatten-dict
