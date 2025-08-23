@@ -11,7 +11,7 @@ train:
         p: 0.5
   mono: false
   norm: true
-  prepare_mode: false
+  prepare_mode: true # false
   # text_path: '/home/jerry/Projects/Dataset/amaai-lab-MusicBench/t5_l'
   # uncond_path: 'dataset/uncond_t5_l.pt'
   # cfg_prob: 0.1
