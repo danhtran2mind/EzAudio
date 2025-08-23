@@ -82,6 +82,7 @@ class EzAudio:
         
         if not local_path.exists():
             print(f"Downloading from {url} to {local_path}...")
+            print("local_path.parent ", local_path.parent)
             try:
                 downloaded_path = hf_hub_download(
                     repo_id=repo_id,
