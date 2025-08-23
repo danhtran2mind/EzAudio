@@ -239,17 +239,17 @@ def write_csv_files(
 
         # Prepare CSV data
         train_csv = pd.DataFrame({
-            "audio_path": [f"{dataset_name}/train/{os.path.basename(row['location'])}" for _, row in train_df.iterrows()],
+            "audio_path": [f"data/{dataset_name}/train/{os.path.basename(row['location'])}" for _, row in train_df.iterrows()],
             "caption": train_df["main_caption"],
             "split": "train"
         })
         val_csv = pd.DataFrame({
-            "audio_path": [f"{dataset_name}/val/{os.path.basename(row['location'])}" for _, row in val_df.iterrows()],
+            "audio_path": [f"data/{dataset_name}/val/{os.path.basename(row['location'])}" for _, row in val_df.iterrows()],
             "caption": val_df["main_caption"],
             "split": "val"
         })
         test_csv = pd.DataFrame({
-            "audio_path": [f"{dataset_name}/test/{os.path.basename(row['location'])}" for _, row in test_df.iterrows()],
+            "audio_path": [f"data/{dataset_name}/test/{os.path.basename(row['location'])}" for _, row in test_df.iterrows()],
             "caption": test_df["main_caption"],
             "split": "test"
         })
