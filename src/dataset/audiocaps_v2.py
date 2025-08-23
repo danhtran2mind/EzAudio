@@ -23,10 +23,10 @@ class EACaps(Dataset):
         self.datadir = data_dir
         meta = pd.read_csv(meta_dir)
         meta = meta[meta['split'] == subset]
-        if fine_tune:
-            meta = meta[meta['fine_tune_data']==True]
-        if prepare_mode is False:
-            meta = meta[meta['audio_length'] != 0]
+        # if fine_tune:
+        #     meta = meta[meta['fine_tune_data']==True]
+        # if prepare_mode is False:
+        #     meta = meta[meta['audio_length'] != 0]
         self.meta = meta
         self.seg_len = seg_length
         self.sr = sr
@@ -116,4 +116,5 @@ class EACaps(Dataset):
 
     def __len__(self):
         return len(self.meta)
+
     #     break
