@@ -134,11 +134,11 @@ class EzAudio:
 
         return autoencoder, unet, tokenizer, text_encoder, noise_scheduler, params
 
-    def generate_audio(self, text, length=10,
+    def generate_audio(self, text, duration=10,
                        guidance_scale=5, guidance_rescale=0.75, ddim_steps=100, eta=1,
                        random_seed=None, randomize_seed=False):
         neg_text = None
-        length = length * self.params['autoencoder']['latent_sr']
+        duration = duration * self.params['autoencoder']['latent_sr']
 
         gt, gt_mask = None, None
 
@@ -154,7 +154,7 @@ class EzAudio:
                          self.tokenizer, self.text_encoder,
                          self.params, self.noise_scheduler,
                          text, neg_text,
-                         length,
+                         duration,
                          guidance_scale, guidance_rescale,
                          ddim_steps, eta, random_seed,
                          self.device)
