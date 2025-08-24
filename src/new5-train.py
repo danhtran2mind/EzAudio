@@ -276,7 +276,9 @@ def save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, acc
     
     # Manage checkpoint limits
     if args.max_num_checkpoints is not None:
-        checkpoint_dirs = sorted(glob.glob(os.path.join(args.save_dir, "checkpoint-*")))
+        files = glob.glob(os.path.join(args.save_dir, "checkpoint-*"))
+        checkpoint_dirs = sorted(files, key=lambda x: int(x.split("ckpt-")[1].strip("'")))
+        print("=" * 10, "checkpoint_dirs: ", checkpoint_dirs)
         if len(checkpoint_dirs) > args.max_num_checkpoints:
             oldest_checkpoint_dir = checkpoint_dirs[0]
             shutil.rmtree(oldest_checkpoint_dir)
@@ -359,7 +361,7 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
         effective_steps_per_epoch = steps_per_epoch / accumulation_steps
         initial_step = int((global_step % effective_steps_per_epoch) * accumulation_steps) if global_step > 0 else 0
         # Initialize tqdm with total steps and initial step
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}", 
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}", 
                            total=steps_per_epoch, initial=initial_step)
         for step, batch in enumerate(progress_bar):
             loss = process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, 
@@ -391,14 +393,14 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                     close_logging(writer, args)
                 progress_bar.close()
                 return
-    
-        # Save checkpoint at the end of each epoch
-        print(f"Saving checkpoint at the end of epoch {epoch+1}")
-        best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, None, accumulation_steps)
-        print(f"Checkpoint saved at global step {global_step}")
-        accelerator.wait_for_everyone()
-        progress_bar.close()
-    
+        
+        # # Save checkpoint at the end of each epoch
+        # print(f"Saving checkpoint at the end of epoch {epoch+1}")
+        # best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, None, accumulation_steps)
+        # print(f"Checkpoint saved at global step {global_step}")
+        # accelerator.wait_for_everyone()
+        # progress_bar.close()
+
     # Save final checkpoint if training completes without hitting max_step
     print(f"Saving final checkpoint at global step {global_step}")
     best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, None, accumulation_steps)
