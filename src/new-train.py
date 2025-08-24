@@ -209,7 +209,7 @@ def validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_sched
 def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder, 
           noise_scheduler, optimizer, lr_scheduler, accelerator, args, params):
     """Train the diffusion model with specified configurations and logging."""
-    global_step = 0.0
+    global_step, start_epoch = load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator)
     losses = 0.0
     log_file = os.path.join(args.log_dir, 'training_log.txt') if args.report_to == 'log_file' else None
     if accelerator.is_main_process:
@@ -219,9 +219,9 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
         if args.report_to == 'tensorboard' and SummaryWriter is not None:
             writer = SummaryWriter(log_dir=args.log_dir)
         elif args.report_to == 'wandb' and wandb is not None:
-            wandb.init(project="ezaudio_training", dir=args.log_dir, config=vars(args))
+            wandb.init(project="ezaudio_training", dir=args.log_dir, config=vars(args), resume="allow" if args.resume_from_checkpoint else None)
     accelerator.wait_for_everyone()
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         unet.train()
         for step, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
             with accelerator.accumulate(unet):
@@ -292,9 +292,13 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
             # Save model checkpoints
             if (global_step + 1) % args.save_every_step == 0:
                 if accelerator.is_main_process:
-                    ckpt_file_path = os.path.join(args.save_dir, f"{global_step+1}.pt")
+                    ckpt_file_path = os.path.join(args.save_dir, f"step_{global_step+1}.pt")
                     unwrapped_unet = accelerator.unwrap_model(unet)
                     accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
+                    # Save training metadata
+                    metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
+                    accelerator.save({"global_step": global_step, "epoch": epoch}, metadata_file)
+                    # Save full accelerator state
                     accelerator.save_state(os.path.join(args.save_dir, f"state_{global_step+1}"))
                     print(f"Model checkpoint successfully saved to: {ckpt_file_path}")
                 accelerator.wait_for_everyone()
@@ -346,9 +350,39 @@ def setup_models(args, params, t5_device, accelerator):
     return autoencoder, tokenizer, text_encoder, unet
 
 
-def load_checkpoint(unet, args, accelerator):
-    """Load model checkpoint if provided and report parameter status."""
-    if args.ckpt:
+def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
+    """Load model checkpoint, optimizer, scheduler, and training state if provided."""
+    global_step = 0
+    start_epoch = 0
+    if args.resume_from_checkpoint:
+        # Load the full accelerator state from the checkpoint directory
+        accelerator.load_state(args.resume_from_checkpoint)
+        # Load model weights separately if needed
+        checkpoint_file = os.path.join(args.resume_from_checkpoint, f"{os.path.basename(args.resume_from_checkpoint)}.pt")
+        if os.path.exists(checkpoint_file):
+            state_dict = torch.load(checkpoint_file, map_location='cpu')['model']
+            result = unet.load_state_dict(state_dict, strict=args.strict)
+            if accelerator.is_main_process:
+                if result.missing_keys:
+                    print("Warning: The following layers were not loaded because they are missing in the checkpoint:")
+                    for key in result.missing_keys:
+                        print(f" - {key}")
+                if result.unexpected_keys:
+                    print("Warning: The following layers were not expected in the model and thus were not loaded:")
+                    for key in result.unexpected_keys:
+                        print(f" - {key}")
+                total_params = sum([param.nelement() for param in unet.parameters()])
+                print("Number of parameter: %.2fM" % (total_params / 1e6))
+        # Optionally, load global step and epoch from a saved metadata file
+        metadata_file = os.path.join(args.resume_from_checkpoint, 'training_metadata.pt')
+        if os.path.exists(metadata_file):
+            metadata = torch.load(metadata_file, map_location='cpu')
+            global_step = metadata.get('global_step', 0)
+            start_epoch = metadata.get('epoch', 0)
+            if accelerator.is_main_process:
+                print(f"Resuming training from epoch {start_epoch}, global step {global_step}")
+    elif args.ckpt:
+        # Load only model weights if not resuming
         state_dict = torch.load(args.ckpt, map_location='cpu')['model']
         result = unet.load_state_dict(state_dict, strict=args.strict)
         if accelerator.is_main_process:
@@ -362,7 +396,7 @@ def load_checkpoint(unet, args, accelerator):
                     print(f" - {key}")
             total_params = sum([param.nelement() for param in unet.parameters()])
             print("Number of parameter: %.2fM" % (total_params / 1e6))
-
+    return global_step, start_epoch
 
 # -------------------------------------------------------------------------- #
 #                        Argument Parsing Function                            #
@@ -391,6 +425,8 @@ def parse_args():
     # Fine-tune settings
     parser.add_argument('--ckpt', type=str, default=None)
     parser.add_argument('--strict', type=bool, default=False)
+    # Resume training
+    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to checkpoint directory or file to resume training from')
     return parser.parse_args()
 
 
