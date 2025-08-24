@@ -371,17 +371,25 @@ def parse_args():
     """Parse command-line arguments for training configuration."""
     parser = argparse.ArgumentParser()
     parser.add_argument('--config-name', type=str, default='src/configs/ezaudio-l.yml')
+
+    # Training settings
     parser.add_argument("--amp", type=str, default='fp16')
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--num-workers', type=int, default=16)
     parser.add_argument('--num-threads', type=int, default=1)
     parser.add_argument('--save-every-step', type=int, default=5000)
     parser.add_argument('--val-step', type=int, default=1000, help='Steps between validation runs')
+
+    # Log and random seed
     parser.add_argument('--random-seed', type=int, default=2024)
     parser.add_argument('--log-step', type=int, default=100)
     parser.add_argument('--report-to', type=str, default='none', choices=['tensorboard', 'log_file', 'wandb', 'none'], 
                         help='Logging method')
     parser.add_argument('--save-dir', type=str, default='./ckpts/')
+
+    # Fine-tune settings
+    parser.add_argument('--ckpt', type=str, default=None)
+    parser.add_argument('--strict', type=bool, default=False)
     return parser.parse_args()
 
 
