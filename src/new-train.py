@@ -357,9 +357,9 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                 accelerator.wait_for_everyone()
                 unet.train()
         
-        # Save epoch checkpoint
-        save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
-        accelerator.wait_for_everyone()
+    # Save in final epoch checkpoint
+    save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
+    accelerator.wait_for_everyone()
     
     if accelerator.is_main_process:
         close_logging(writer, args)
@@ -414,7 +414,7 @@ def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
         # Load the full accelerator state from the checkpoint directory
         accelerator.load_state(args.resume_from_checkpoint)
         # Load model weights separately if needed
-        checkpoint_file = os.path.join(args.resume_from_checkpoint, f"{os.path.basename(args.resume_from_checkpoint)}.pt")
+        checkpoint_file = args.resume_from_checkpoint # os.path.join(args.resume_from_checkpoint, f"{os.path.basename(args.resume_from_checkpoint)}.pt")
         if os.path.exists(checkpoint_file):
             state_dict = torch.load(checkpoint_file, map_location='cpu')['model']
             result = unet.load_state_dict(state_dict, strict=args.strict)
