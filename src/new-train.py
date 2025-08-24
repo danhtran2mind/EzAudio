@@ -425,8 +425,8 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--num-workers', type=int, default=16)
     parser.add_argument('--num-threads', type=int, default=1)
-    parser.add_argument('--save-every-step', type=int, default=5000)
-    parser.add_argument('--val-step', type=int, default=1000, help='Steps between validation runs')
+    parser.add_argument('--save-every-step', type=int, default=500)
+    parser.add_argument('--val-step', type=int, default=500, help='Steps between validation runs')
     parser.add_argument('--batch-size', type=int, default=None, help='Batch size for training and validation (overrides config if set)')
 
     # Log and random seed
