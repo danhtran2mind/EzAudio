@@ -411,11 +411,8 @@ def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
     global_step = 0
     start_epoch = 0
     if args.resume_from_checkpoint:
-        # Load the full accelerator state from the checkpoint directory
-        # accelerator.load_state(args.resume_from_checkpoint)
-        accelerator.load_state(os.path.dirname(args.resume_from_checkpoint))
-        # Load model weights separately if needed
-        checkpoint_file = args.resume_from_checkpoint # os.path.join(args.resume_from_checkpoint, f"{os.path.basename(args.resume_from_checkpoint)}.pt")
+        # Load model weights from a specific .pt file
+        checkpoint_file = args.resume_from_checkpoin # os.path.join(args.resume_from_checkpoint, "epoch_1.pt")  # Use epoch_1.pt or step_500.0.pt
         if os.path.exists(checkpoint_file):
             state_dict = torch.load(checkpoint_file, map_location='cpu')['model']
             result = unet.load_state_dict(state_dict, strict=args.strict)
@@ -430,7 +427,7 @@ def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
                         print(f" - {key}")
                 total_params = sum([param.nelement() for param in unet.parameters()])
                 print("Number of parameter: %.2fM" % (total_params / 1e6))
-        # Optionally, load global step and epoch from a saved metadata file
+        # Load global step and epoch from metadata
         metadata_file = os.path.join(args.resume_from_checkpoint, 'training_metadata.pt')
         if os.path.exists(metadata_file):
             metadata = torch.load(metadata_file, map_location='cpu')
