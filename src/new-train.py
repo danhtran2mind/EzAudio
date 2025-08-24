@@ -252,25 +252,26 @@ def log_validation_progress(args, global_step, epoch, val_loss, log_file, writer
     print(val_log_message)
 
 
-def save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss):
+def save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss, accumulation_steps):
     """Save model checkpoint, training metadata, and best model based on validation loss."""
     if not accelerator.is_main_process:
         return best_loss
     step = int(global_step + 1)  # Convert global_step to integer
-    ckpt_file_path = os.path.join(args.save_dir, f"step_{step}.pt")
-    unwrapped_unet = accelerator.unwrap_model(unet)
-    accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
-    metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
-    accelerator.save({"global_step": global_step, "epoch": epoch, "best_loss": best_loss}, metadata_file)
-    accelerator.save_state(os.path.join(args.save_dir, f"state_{step}"))
-    print(f"\nModel checkpoint successfully saved to: {ckpt_file_path}")
+    if (step) % (args.save_every_step // accumulation_steps) == 0:
+        ckpt_file_path = os.path.join(args.save_dir, f"step_{step}.pt")
+        unwrapped_unet = accelerator.unwrap_model(unet)
+        accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
+        metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
+        accelerator.save({"global_step": global_step, "epoch": epoch, "best_loss": best_loss}, metadata_file)
+        accelerator.save_state(os.path.join(args.save_dir, f"state_{step}"))
+        print(f"\nModel checkpoint successfully saved to: {ckpt_file_path}")
     
-    # Save as best.pt if validation loss improved
-    if val_loss is not None and (best_loss is None or val_loss < best_loss):
-        best_loss = val_loss
-        best_file_path = os.path.join(args.save_dir, "best.pt")
-        accelerator.save({"model": unwrapped_unet.state_dict()}, best_file_path)
-        print(f"\nBest model checkpoint saved to: {best_file_path}")
+        # Save as best.pt if validation loss improved
+        if val_loss is not None and (best_loss is None or val_loss < best_loss):
+            best_loss = val_loss
+            best_file_path = os.path.join(args.save_dir, "best.pt")
+            accelerator.save({"model": unwrapped_unet.state_dict()}, best_file_path)
+            print(f"\nBest model checkpoint saved to: {best_file_path}")
     
     return best_loss
 
@@ -288,7 +289,7 @@ def save_epoch_checkpoint(unet, global_step, epoch, args, accelerator):
     print(f"\nEpoch {epoch+1} checkpoint successfully saved to: {ckpt_file_path}")
 
 
-def process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, noise_scheduler, optimizer, lr_scheduler, params, args, accelerator):
+def process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, noise_scheduler, optimizer, lr_scheduler, params, args, accumulation_steps):
     """Process a single training step, including forward pass and backpropagation."""
     with accelerator.accumulate(unet):
         if args.offline:
@@ -312,13 +313,14 @@ def process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, noi
         optimizer.step()
         lr_scheduler.step()
         optimizer.zero_grad()
-    return loss.item() / params['opt']['accumulation_steps']
+    return loss.item() / accumulation_steps
 
 
 def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder, 
           noise_scheduler, optimizer, lr_scheduler, accelerator, args, params):
     """Main training loop with modularized components."""
     global_step, start_epoch = load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator)
+    accumulation_steps = args.accumulation_steps if args.accumulation_steps is not None else params['opt']['accumulation_steps']
     losses = 0.0
     best_loss = None
     log_file = os.path.join(args.log_dir, 'training_log.txt') if args.report_to == 'log_file' else None
@@ -329,8 +331,8 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
         unet.train()
         for step, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
             loss = process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, 
-                                        noise_scheduler, optimizer, lr_scheduler, params, args, accelerator)
-            global_step += 1 / params['opt']['accumulation_steps']
+                                        noise_scheduler, optimizer, lr_scheduler, params, args, accumulation_steps)
+            global_step += 1 / accumulation_steps
             losses += loss
             if global_step % args.log_step == 0:
                 lr = optimizer.param_groups[0]['lr']
@@ -338,17 +340,26 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
             if global_step % args.val_step == 0 and global_step > 0:
                 val_loss = validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_scheduler, params, accelerator, args)
                 log_validation_progress(args, global_step, epoch, val_loss, log_file, writer, accelerator)
-                best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss)
+                best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss, accumulation_steps)
                 accelerator.wait_for_everyone()
                 unet.train()
-            elif (global_step + 1) % args.save_every_step == 0:
-                best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, None)
+            elif (global_step + 1) % (args.save_every_step // accumulation_steps) == 0:
+                best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, None, accumulation_steps)
                 accelerator.wait_for_everyone()
                 unet.train()
-        
-        save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
-        accelerator.wait_for_everyone()
+            
+            # Check if max_step is reached
+            if args.max_step is not None and global_step >= args.max_step:
+                print(f"Reached maximum step {args.max_step}. Stopping training.")
+                save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
+                accelerator.wait_for_everyone()
+                if accelerator.is_main_process:
+                    close_logging(writer, args)
+                return
     
+    # Save final epoch checkpoint when training completes
+    save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
+    accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         close_logging(writer, args)
 
@@ -461,6 +472,8 @@ def parse_args():
     parser.add_argument('--save-every-step', type=int, default=500)
     parser.add_argument('--val-step', type=int, default=500, help='Steps between validation runs')
     parser.add_argument('--batch-size', type=int, default=None, help='Batch size for training and validation (overrides config if set)')
+    parser.add_argument('--accumulation_steps', type=int, default=None, help='Number of gradient accumulation steps (overrides config if set)')
+    parser.add_argument('--max_step', type=int, default=None, help='Maximum number of training steps (adjusted for accumulation_steps)')
     parser.add_argument('--random-seed', type=int, default=2024)
     parser.add_argument('--log-step', type=int, default=100)
     parser.add_argument('--report-to', type=str, default='none', choices=['tensorboard', 'log_file', 'wandb', 'none'], 
@@ -481,7 +494,8 @@ def main():
     set_device(args)
     random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
-    accelerator = Accelerator(mixed_precision=args.amp, gradient_accumulation_steps=params['opt']['accumulation_steps'])
+    accumulation_steps = args.accumulation_steps if args.accumulation_steps is not None else params['opt']['accumulation_steps']
+    accelerator = Accelerator(mixed_precision=args.amp, gradient_accumulation_steps=accumulation_steps)
     train_loader, val_loader, t5_device = setup_dataset_and_loaders(args, params)
     autoencoder, tokenizer, text_encoder, unet = setup_models(args, params, t5_device, accelerator)
     noise_scheduler = DDIMScheduler(**params['diff'])
