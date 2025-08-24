@@ -4,6 +4,7 @@ import os
 import time
 import numpy as np
 from tqdm import tqdm
+import glob
 
 import torch
 import torch.nn as nn
@@ -69,7 +70,6 @@ def setup_optimizer(unet, params):
     whitelist_weight_modules = (nn.Linear, nn.Conv1d, nn.Conv2d)
     blacklist_weight_modules = (nn.LayerNorm, nn.Embedding, RMSNorm)
     no_decay_suffixes = ['bias', 'abs_pe', 'alpha', 'beta', 'mask_embed', 'scale_shift_table', 'cfg_embedding']
-    # Categorize parameters for weight decay
     for mn, m in unet.named_modules():
         for pn, p in m.named_parameters():
             fpn = f'{mn}.{pn}' if mn else pn
@@ -82,9 +82,7 @@ def setup_optimizer(unet, params):
     param_dict = {pn: p for pn, p in unet.named_parameters()}
     inter_params = decay & no_decay
     union_params = decay | no_decay
-    # Ensure no parameters are in both decay and no-decay sets
     assert len(inter_params) == 0, f"Parameters {str(inter_params)} made it into both decay/no_decay sets!"
-    # Ensure all parameters are categorized
     assert len(param_dict.keys() - union_params) == 0, f"Parameters {str(param_dict.keys() - union_params)} were not separated into either decay/no_decay set!"
     optim_groups = [
         {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": params['opt']['weight_decay']},
@@ -103,19 +101,15 @@ def prepare_batch(args, batch, autoencoder, tokenizer, text_encoder, params):
     """Prepare a batch for training with audio encoding and optional text processing."""
     audio_clip, text_batch = batch
     with torch.no_grad():
-        # Encode audio using the autoencoder
         audio_clip = autoencoder(audio=audio_clip)
         if tokenizer is not None:
-            # Apply classifier-free guidance by randomly masking text
             text_batch_np = np.array(text_batch)
             cfg_mask = torch.rand(len(text_batch_np)) < params['text_encoder']['cfg']
             text_batch_np[cfg_mask] = ""
             text_batch = text_batch_np.tolist()
-            # Tokenize text inputs
             text_batch = tokenizer(text_batch, max_length=params['text_encoder']['max_length'], 
                                    padding="max_length", truncation=True, return_tensors="pt")
             text_mask = text_batch.attention_mask.to(audio_clip.device).bool()
-            # Encode text using the text encoder
             text = text_encoder(input_ids=text_batch.input_ids.to(audio_clip.device),
                                 attention_mask=text_mask).last_hidden_state
         else:
@@ -127,7 +121,6 @@ def prepare_batch_cache(args, batch, autoencoder, tokenizer, text_encoder, param
     """Prepare a batch with cached text embeddings for offline processing."""
     audio_clip, text, text_mask = batch
     with torch.no_grad():
-        # Encode audio using the autoencoder
         audio_clip = autoencoder(audio=audio_clip)
     if tokenizer is None:
         text, text_mask = None, None
@@ -140,13 +133,11 @@ def prepare_batch_cache(args, batch, autoencoder, tokenizer, text_encoder, param
 def compute_loss(model_pred, target, mask, noise_scheduler, timesteps, snr_gamma=None):
     """Compute the loss for diffusion model training, optionally weighted by SNR."""
     if snr_gamma is None:
-        # Standard MSE loss with masking
         loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
         loss = loss * mask.float()
         loss = loss.sum(dim=[1, 2]) / mask.sum(dim=[1, 2])
         loss = loss.mean()
     else:
-        # SNR-weighted MSE loss
         snr = compute_snr(noise_scheduler, timesteps)
         mse_loss_weights = torch.stack([snr, snr_gamma * torch.ones_like(timesteps)], dim=1).min(dim=1)[0]
         if noise_scheduler.config.prediction_type == "epsilon":
@@ -173,27 +164,21 @@ def validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_sched
     val_steps = 0
     with torch.no_grad():
         for batch in tqdm(val_loader, desc="Validating"):
-            # Prepare validation batch
             if args.offline:
                 audio_clip, text, text_mask = prepare_batch_cache(args, batch, autoencoder, tokenizer, text_encoder, params)
             else:
                 audio_clip, text, text_mask = prepare_batch(args, batch, autoencoder, tokenizer, text_encoder, params)
-            # Scale and shift audio data
             audio_clip = scale_shift(audio_clip, params['autoencoder']['scale'], params['autoencoder']['shift'])
             audio_clip = audio_clip[:, :, :params['data']['train_frames']]
-            # Add noise for diffusion process
             noise = torch.randn(audio_clip.shape).to(accelerator.device)
             timesteps = torch.randint(0, noise_scheduler.config.num_train_timesteps, (noise.shape[0],), device=accelerator.device).long()
             noisy_target = noise_scheduler.add_noise(audio_clip, noise, timesteps)
-            # Determine target based on prediction type
             if noise_scheduler.config.prediction_type == "epsilon":
                 target = noise
             elif noise_scheduler.config.prediction_type == "v_prediction":
                 velocity = noise_scheduler.get_velocity(audio_clip, noise, timesteps)
                 target = velocity
-            # Forward pass through the model
             pred, mask = unet(noisy_target, timesteps, text, context_mask=text_mask, cls_token=None, gt=audio_clip)
-            # Compute validation loss
             loss = compute_loss(pred, target, mask, noise_scheduler, timesteps, snr_gamma=params['opt']['snr_gamma'])
             val_loss += loss.item()
             val_steps += 1
@@ -267,17 +252,27 @@ def log_validation_progress(args, global_step, epoch, val_loss, log_file, writer
     print(val_log_message)
 
 
-def save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator):
-    """Save model checkpoint and training metadata."""
+def save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss):
+    """Save model checkpoint, training metadata, and best model based on validation loss."""
     if not accelerator.is_main_process:
-        return
-    ckpt_file_path = os.path.join(args.save_dir, f"step_{global_step+1}.pt")
+        return best_loss
+    step = int(global_step + 1)  # Convert global_step to integer
+    ckpt_file_path = os.path.join(args.save_dir, f"step_{step}.pt")
     unwrapped_unet = accelerator.unwrap_model(unet)
     accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
     metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
-    accelerator.save({"global_step": global_step, "epoch": epoch}, metadata_file)
-    accelerator.save_state(os.path.join(args.save_dir, f"state_{global_step+1}"))
+    accelerator.save({"global_step": global_step, "epoch": epoch, "best_loss": best_loss}, metadata_file)
+    accelerator.save_state(os.path.join(args.save_dir, f"state_{step}"))
     print(f"\nModel checkpoint successfully saved to: {ckpt_file_path}")
+    
+    # Save as best.pt if validation loss improved
+    if val_loss is not None and (best_loss is None or val_loss < best_loss):
+        best_loss = val_loss
+        best_file_path = os.path.join(args.save_dir, "best.pt")
+        accelerator.save({"model": unwrapped_unet.state_dict()}, best_file_path)
+        print(f"\nBest model checkpoint saved to: {best_file_path}")
+    
+    return best_loss
 
 
 def save_epoch_checkpoint(unet, global_step, epoch, args, accelerator):
@@ -296,28 +291,21 @@ def save_epoch_checkpoint(unet, global_step, epoch, args, accelerator):
 def process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, noise_scheduler, optimizer, lr_scheduler, params, args, accelerator):
     """Process a single training step, including forward pass and backpropagation."""
     with accelerator.accumulate(unet):
-        # Prepare batch
         if args.offline:
             audio_clip, text, text_mask = prepare_batch_cache(args, batch, autoencoder, tokenizer, text_encoder, params)
         else:
             audio_clip, text, text_mask = prepare_batch(args, batch, autoencoder, tokenizer, text_encoder, params)
-        # Scale and shift audio data
         audio_clip = scale_shift(audio_clip, params['autoencoder']['scale'], params['autoencoder']['shift'])
         audio_clip = audio_clip[:, :, :params['data']['train_frames']]
-        # Add noise
         noise = torch.randn(audio_clip.shape).to(accelerator.device)
         timesteps = torch.randint(0, noise_scheduler.config.num_train_timesteps, (noise.shape[0],), device=accelerator.device).long()
         noisy_target = noise_scheduler.add_noise(audio_clip, noise, timesteps)
-        # Determine target
         if noise_scheduler.config.prediction_type == "epsilon":
             target = noise
         elif noise_scheduler.config.prediction_type == "v_prediction":
             target = noise_scheduler.get_velocity(audio_clip, noise, timesteps)
-        # Forward pass
         pred, mask = unet(noisy_target, timesteps, text, context_mask=text_mask, cls_token=None, gt=audio_clip)
-        # Compute loss
         loss = compute_loss(pred, target, mask, noise_scheduler, timesteps, snr_gamma=params['opt']['snr_gamma'])
-        # Backpropagation
         accelerator.backward(loss)
         if accelerator.sync_gradients and params['opt'].get('grad_clip', 0) > 0:
             accelerator.clip_grad_norm_(unet.parameters(), max_norm=params['opt']['grad_clip'])
@@ -332,6 +320,7 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
     """Main training loop with modularized components."""
     global_step, start_epoch = load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator)
     losses = 0.0
+    best_loss = None
     log_file = os.path.join(args.log_dir, 'training_log.txt') if args.report_to == 'log_file' else None
     writer = initialize_logging(args, params, accelerator)
     
@@ -343,31 +332,27 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                                         noise_scheduler, optimizer, lr_scheduler, params, args, accelerator)
             global_step += 1 / params['opt']['accumulation_steps']
             losses += loss
-            # Log progress
             if global_step % args.log_step == 0:
                 lr = optimizer.param_groups[0]['lr']
                 losses = log_training_progress(args, global_step, epoch, losses, lr, log_file, writer, accelerator)
-            # Validate
             if global_step % args.val_step == 0 and global_step > 0:
                 val_loss = validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_scheduler, params, accelerator, args)
                 log_validation_progress(args, global_step, epoch, val_loss, log_file, writer, accelerator)
-            # Save checkpoint
-            if (global_step + 1) % args.save_every_step == 0:
-                save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator)
+                best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss)
+                accelerator.wait_for_everyone()
+                unet.train()
+            elif (global_step + 1) % args.save_every_step == 0:
+                best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, None)
                 accelerator.wait_for_everyone()
                 unet.train()
         
-    # Save in final epoch checkpoint
-    save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
-    accelerator.wait_for_everyone()
+        save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
+        accelerator.wait_for_everyone()
     
     if accelerator.is_main_process:
         close_logging(writer, args)
 
 
-# -------------------------------------------------------------------------- #
-#                     Additional Setup Functions                             #
-# -------------------------------------------------------------------------- #
 def setup_dataset_and_loaders(args, params):
     """Initialize datasets and data loaders for training and validation."""
     train_set = EACaps(**params['data']['train'])
@@ -378,7 +363,6 @@ def setup_dataset_and_loaders(args, params):
     else:
         args.offline = False
         t5_device = args.device
-    # Use args.batch_size if provided, otherwise use params['opt']['batch_size']
     batch_size = args.batch_size if args.batch_size is not None else params['opt']['batch_size']
     train_loader = DataLoader(train_set, num_workers=args.num_workers, batch_size=batch_size, shuffle=True)
     val_set = EACaps(**params['data'].get('val', params['data']['train']))
@@ -407,36 +391,49 @@ def setup_models(args, params, t5_device, accelerator):
 
 
 def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
-    """Load model checkpoint, optimizer, scheduler, and training state if provided."""
+    """Load model checkpoint, optimizer, scheduler, and training state from the latest step_{int(step)}.pt."""
     global_step = 0
     start_epoch = 0
+    best_loss = None
     if args.resume_from_checkpoint:
-        # Load model weights from a specific .pt file
-        checkpoint_file = args.resume_from_checkpoint # os.path.join(args.resume_from_checkpoint, "epoch_1.pt")  # Use epoch_1.pt or step_500.0.pt
-        if os.path.exists(checkpoint_file):
-            state_dict = torch.load(checkpoint_file, map_location='cpu')['model']
-            result = unet.load_state_dict(state_dict, strict=args.strict)
-            if accelerator.is_main_process:
-                if result.missing_keys:
-                    print("Warning: The following layers were not loaded because they are missing in the checkpoint:")
-                    for key in result.missing_keys:
-                        print(f" - {key}")
-                if result.unexpected_keys:
-                    print("Warning: The following layers were not expected in the model and thus were not loaded:")
-                    for key in result.unexpected_keys:
-                        print(f" - {key}")
-                total_params = sum([param.nelement() for param in unet.parameters()])
-                print("Number of parameter: %.2fM" % (total_params / 1e6))
-        # Load global step and epoch from metadata
-        metadata_file = os.path.join(args.resume_from_checkpoint, 'training_metadata.pt')
+        # Find the latest step_{int(step)}.pt file
+        checkpoint_dir = args.resume_from_checkpoint
+        step_files = glob.glob(os.path.join(checkpoint_dir, "step_*.pt"))
+        if step_files:
+            latest_step_file = max(step_files, key=lambda x: int(os.path.basename(x).split('_')[1].split('.')[0]))
+            step_number = int(os.path.basename(latest_step_file).split('_')[1].split('.')[0])
+            print(f"Loading latest checkpoint from: {latest_step_file}")
+            # Load accelerator state from corresponding state directory
+            state_dir = os.path.join(checkpoint_dir, f"state_{step_number}")
+            if os.path.exists(state_dir):
+                accelerator.load_state(state_dir)
+                print(f"Loaded accelerator state from: {state_dir}")
+            # Load model weights
+            if os.path.exists(latest_step_file):
+                state_dict = torch.load(latest_step_file, map_location='cpu')['model']
+                result = unet.load_state_dict(state_dict, strict=args.strict)
+                if accelerator.is_main_process:
+                    if result.missing_keys:
+                        print("Warning: The following layers were not loaded because they are missing in the checkpoint:")
+                        for key in result.missing_keys:
+                            print(f" - {key}")
+                    if result.unexpected_keys:
+                        print("Warning: The following layers were not expected in the model and thus were not loaded:")
+                        for key in result.unexpected_keys:
+                            print(f" - {key}")
+                    total_params = sum([param.nelement() for param in unet.parameters()])
+                    print("Number of parameter: %.2fM" % (total_params / 1e6))
+        # Load metadata
+        metadata_file = os.path.join(checkpoint_dir, 'training_metadata.pt')
         if os.path.exists(metadata_file):
             metadata = torch.load(metadata_file, map_location='cpu')
             global_step = metadata.get('global_step', 0)
             start_epoch = metadata.get('epoch', 0)
+            best_loss = metadata.get('best_loss', None)
             if accelerator.is_main_process:
-                print(f"Resuming training from epoch {start_epoch}, global step {global_step}")
+                print(f"Resuming training from epoch {start_epoch}, global step {global_step}, best loss {best_loss}")
     elif args.ckpt:
-        # Load only model weights if not resuming
+        print(f"Loading model weights from: {args.ckpt}")
         state_dict = torch.load(args.ckpt, map_location='cpu')['model']
         result = unet.load_state_dict(state_dict, strict=args.strict)
         if accelerator.is_main_process:
@@ -453,15 +450,10 @@ def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
     return global_step, start_epoch
 
 
-# -------------------------------------------------------------------------- #
-#                        Argument Parsing Function                            #
-# -------------------------------------------------------------------------- #
 def parse_args():
     """Parse command-line arguments for training configuration."""
     parser = argparse.ArgumentParser()
     parser.add_argument('--config-name', type=str, default='src/configs/ezaudio-l.yml')
-
-    # Training settings
     parser.add_argument("--amp", type=str, default='fp16')
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--num-workers', type=int, default=16)
@@ -469,62 +461,35 @@ def parse_args():
     parser.add_argument('--save-every-step', type=int, default=500)
     parser.add_argument('--val-step', type=int, default=500, help='Steps between validation runs')
     parser.add_argument('--batch-size', type=int, default=None, help='Batch size for training and validation (overrides config if set)')
-
-    # Log and random seed
     parser.add_argument('--random-seed', type=int, default=2024)
     parser.add_argument('--log-step', type=int, default=100)
     parser.add_argument('--report-to', type=str, default='none', choices=['tensorboard', 'log_file', 'wandb', 'none'], 
                         help='Logging method')
     parser.add_argument('--save-dir', type=str, default='./ckpts/')
-
-    # Fine-tune settings
     parser.add_argument('--ckpt', type=str, default=None)
     parser.add_argument('--strict', type=bool, default=False)
-    # Resume training
-    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to checkpoint directory or file to resume training from')
+    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to checkpoint directory to resume training from')
     return parser.parse_args()
 
 
-# -------------------------------------------------------------------------- #
-#                          Main Execution Block                              #
-# -------------------------------------------------------------------------- #
 def main():
     """Main function to orchestrate training setup and execution."""
-    # Parse arguments and load configuration
     args = parse_args()
     params = load_yaml_with_includes(args.config_name)
-    
-    # Determine training stage
     args.stage = 'audioset' if params['model']['context_dim'] is None else 'audiocaps'
     args.mae = args.stage == 'audioset'
-    
-    # Configure device and seeds
     set_device(args)
     random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
-    
-    # Initialize accelerator
     accelerator = Accelerator(mixed_precision=args.amp, gradient_accumulation_steps=params['opt']['accumulation_steps'])
-    
-    # Setup datasets and loaders
     train_loader, val_loader, t5_device = setup_dataset_and_loaders(args, params)
-    
-    # Initialize models
     autoencoder, tokenizer, text_encoder, unet = setup_models(args, params, t5_device, accelerator)
-    
-    # Initialize noise scheduler
     noise_scheduler = DDIMScheduler(**params['diff'])
-    
-    # Setup optimizer and scheduler
     optimizer = setup_optimizer(unet, params)
     lr_scheduler = get_lr_scheduler(optimizer, 'customized', warmup_steps=params['opt']['warmup'])
-    
-    # Prepare for distributed training
     unet, autoencoder, optimizer, lr_scheduler, train_loader, val_loader = accelerator.prepare(
         unet, autoencoder, optimizer, lr_scheduler, train_loader, val_loader
     )
-    
-    # Start training
     train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder, 
           noise_scheduler, optimizer, lr_scheduler, accelerator, args, params)
 
