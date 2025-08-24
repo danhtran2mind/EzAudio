@@ -206,7 +206,8 @@ def validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_sched
 # -------------------------------------------------------------------------- #
 #                          Main Training Function                            #
 # -------------------------------------------------------------------------- #
-def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder, noise_scheduler, optimizer, lr_scheduler, accelerator, args, params):
+def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder, 
+          noise_scheduler, optimizer, lr_scheduler, accelerator, args, params):
     """Train the diffusion model with specified configurations and logging."""
     global_step = 0.0
     losses = 0.0
@@ -291,9 +292,11 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder, 
             # Save model checkpoints
             if (global_step + 1) % args.save_every_step == 0:
                 if accelerator.is_main_process:
+                    ckpt_file_path = os.path.join(args.save_dir, f"{global_step+1}.pt")
                     unwrapped_unet = accelerator.unwrap_model(unet)
-                    accelerator.save({"model": unwrapped_unet.state_dict()}, os.path.join(args.save_dir, f"{global_step+1}.pt"))
+                    accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
                     accelerator.save_state(os.path.join(args.save_dir, f"state_{global_step+1}"))
+                    print(f"Model checkpoint successfully saved to: {ckpt_file_path}")
                 accelerator.wait_for_everyone()
                 unet.train()
     if accelerator.is_main_process:
