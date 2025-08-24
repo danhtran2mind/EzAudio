@@ -412,7 +412,8 @@ def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
     start_epoch = 0
     if args.resume_from_checkpoint:
         # Load the full accelerator state from the checkpoint directory
-        accelerator.load_state(args.resume_from_checkpoint)
+        # accelerator.load_state(args.resume_from_checkpoint)
+        accelerator.load_state(os.path.basename(args.resume_from_checkpoint))
         # Load model weights separately if needed
         checkpoint_file = args.resume_from_checkpoint # os.path.join(args.resume_from_checkpoint, f"{os.path.basename(args.resume_from_checkpoint)}.pt")
         if os.path.exists(checkpoint_file):
