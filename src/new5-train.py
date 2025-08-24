@@ -348,6 +348,7 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
           noise_scheduler, optimizer, lr_scheduler, accelerator, args, params):
     """Main training loop with modularized components."""
     global_step, start_epoch, best_loss = load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator)
+    print("=" * 10, "global_step, start_epoch, best_loss: ", global_step, start_epoch, best_loss)
     accumulation_steps = args.accumulation_steps if args.accumulation_steps is not None else params['opt']['accumulation_steps']
     losses = 0.0
     log_file = os.path.join(args.log_dir, 'training_log.txt') if args.report_to == 'log_file' else None
