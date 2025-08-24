@@ -379,6 +379,7 @@ def parse_args():
     parser.add_argument('--num-threads', type=int, default=1)
     parser.add_argument('--save-every-step', type=int, default=5000)
     parser.add_argument('--val-step', type=int, default=1000, help='Steps between validation runs')
+    parser.add_argument('--batch-size', type=int, default=None, help='Batch size for training and validation (overrides config if set)')
 
     # Log and random seed
     parser.add_argument('--random-seed', type=int, default=2024)
@@ -425,9 +426,11 @@ if __name__ == '__main__':
     else:
         args.offline = False
         t5_device = accelerator.device
-    train_loader = DataLoader(train_set, num_workers=args.num_workers, batch_size=params['opt']['batch_size'], shuffle=True)
+    # Use args.batch_size if provided, otherwise fall back to params['opt']['batch_size']
+    batch_size = args.batch_size if args.batch_size is not None else params['opt']['batch_size']
+    train_loader = DataLoader(train_set, num_workers=args.num_workers, batch_size=batch_size, shuffle=True)
     val_set = EACaps(**params['data'].get('val', params['data']['train']))
-    val_loader = DataLoader(val_set, num_workers=args.num_workers, batch_size=params['opt']['batch_size'], shuffle=False)
+    val_loader = DataLoader(val_set, num_workers=args.num_workers, batch_size=batch_size, shuffle=False)
     # Initialize models
     autoencoder = Autoencoder(ckpt_path=params['autoencoder']['path'], model_type=params['autoencoder']['name'], quantization_first=params['autoencoder']['q_first'])
     autoencoder.to(accelerator.device)
