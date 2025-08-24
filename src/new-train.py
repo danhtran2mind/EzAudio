@@ -479,7 +479,7 @@ if __name__ == '__main__':
     # Use args.batch_size if provided, otherwise fall back to params['opt']['batch_size']
     batch_size = args.batch_size if args.batch_size is not None else params['opt']['batch_size']
     train_loader = DataLoader(train_set, num_workers=args.num_workers, batch_size=batch_size, shuffle=True)
-    val_set = EACaps(**params['data'].get('val', params['data']['train']))
+    val_set = EACaps(**params['data'].get('val', params['data']['val']))
     val_loader = DataLoader(val_set, num_workers=args.num_workers, batch_size=batch_size, shuffle=False)
     # Initialize models
     autoencoder = Autoencoder(ckpt_path=params['autoencoder']['path'], model_type=params['autoencoder']['name'], quantization_first=params['autoencoder']['q_first'])
