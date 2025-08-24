@@ -11,7 +11,7 @@ model:
   out_chans: 128
   input_type: '1d'
   embed_dim: 768
-  depth: 12
+  depth: 16
   num_heads: 12
   mlp_ratio: 4.0
   qkv_bias: false
@@ -22,8 +22,8 @@ model:
   context_norm: true
   use_checkpoint: true
   time_fusion: 'ada_sola_bias'
-  ada_sola_rank: 16
-  ada_sola_alpha: 16
+  ada_sola_rank: 24
+  ada_sola_alpha: 24
   cls_dim: null
   context_dim: 512
   context_fusion: 'cross'
@@ -45,7 +45,7 @@ autoencoder:
   shift: 0.0
 
 text_encoder:
-  model: google/flan-t5-base
+  model: google/flan-t5-small
   max_length: 100
   cfg: 0.1
 
