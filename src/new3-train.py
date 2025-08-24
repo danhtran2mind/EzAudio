@@ -5,6 +5,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 import glob
+import shutil
 
 import torch
 import torch.nn as nn
@@ -253,13 +254,16 @@ def log_validation_progress(args, global_step, epoch, val_loss, log_file, writer
 
 
 def save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss, accumulation_steps):
-    """Save model checkpoint, training metadata, and best model based on validation loss."""
+    """Save model checkpoint, training metadata, and best model based on validation loss, and manage checkpoint limits."""
     if not accelerator.is_main_process:
         return best_loss
     # Save checkpoint at each save_step (adjusted for accumulation steps)
     step = int(global_step)  # Convert global_step to integer for filename
     if (step) % (args.save_step // accumulation_steps) == 0 and step > 0:
-        ckpt_file_path = os.path.join(args.save_dir, f"step_{step}.pt")
+        # Create checkpoint directory
+        ckpt_dir = os.path.join(args.save_dir, f"checkpoint-{step}")
+        os.makedirs(ckpt_dir, exist_ok=True)
+        ckpt_file_path = os.path.join(ckpt_dir, f"checkpoint-{step}.pt")
         unwrapped_unet = accelerator.unwrap_model(unet)
         accelerator.save({
             "model": unwrapped_unet.state_dict(),
@@ -270,6 +274,14 @@ def save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, acc
             "best_loss": best_loss
         }, ckpt_file_path)
         print(f"\nModel checkpoint successfully saved to: {ckpt_file_path}")
+        
+        # Manage checkpoint limits
+        if args.max_num_checkpoints is not None:
+            checkpoint_dirs = sorted(glob.glob(os.path.join(args.save_dir, "checkpoint-*")))
+            if len(checkpoint_dirs) > args.max_num_checkpoints:
+                oldest_checkpoint_dir = checkpoint_dirs[0]
+                shutil.rmtree(oldest_checkpoint_dir)
+                print(f"Removed oldest checkpoint directory: {oldest_checkpoint_dir} to maintain max_num_checkpoints={args.max_num_checkpoints}")
     
         # Save as best.pt if validation loss improved
         if val_loss is not None and (best_loss is None or val_loss < best_loss):
@@ -292,7 +304,9 @@ def save_epoch_checkpoint(unet, global_step, epoch, args, accelerator):
     """Save model checkpoint at the end of an epoch."""
     if not accelerator.is_main_process:
         return
-    ckpt_file_path = os.path.join(args.save_dir, f"epoch_{epoch+1}.pt")
+    ckpt_dir = os.path.join(args.save_dir, f"checkpoint-epoch-{epoch+1}")
+    os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_file_path = os.path.join(ckpt_dir, f"checkpoint-epoch-{epoch+1}.pt")
     unwrapped_unet = accelerator.unwrap_model(unet)
     accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
     metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
@@ -339,7 +353,14 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
     accelerator.wait_for_everyone()
     for epoch in range(start_epoch, args.epochs):
         unet.train()
-        for step, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
+        # Calculate total steps per epoch and initial step for progress bar
+        steps_per_epoch = len(train_loader)
+        effective_steps_per_epoch = steps_per_epoch / accumulation_steps
+        initial_step = int((global_step % effective_steps_per_epoch) * accumulation_steps) if global_step > 0 else 0
+        # Initialize tqdm with total steps and initial step
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}", 
+                           total=steps_per_epoch, initial=initial_step)
+        for step, batch in enumerate(progress_bar):
             loss = process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, 
                                         noise_scheduler, optimizer, lr_scheduler, params, args, accumulation_steps, accelerator)
             global_step += 1 / accumulation_steps
@@ -358,6 +379,9 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                 accelerator.wait_for_everyone()
                 unet.train()
             
+            # Update progress bar with current global step
+            progress_bar.set_postfix({'global_step': f'{int(global_step)}', 'loss': f'{loss:.6f}'})
+            
             # Check if max_step is reached
             if args.max_step is not None and global_step >= args.max_step:
                 print(f"Reached maximum step {args.max_step}. Stopping training.")
@@ -365,7 +389,10 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
                     close_logging(writer, args)
+                progress_bar.close()
                 return
+    
+        progress_bar.close()
     
     # Save final epoch checkpoint when training completes
     save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
@@ -418,6 +445,7 @@ def load_checkpoint(unet, optimizer, lr_scheduler, args, accelerator):
     best_loss = None
     if args.resume_from_checkpoint:
         checkpoint_path = args.resume_from_checkpoint
+        # Adjust path if it points to a file inside a checkpoint directory
         if os.path.isfile(checkpoint_path):
             print(f"Loading checkpoint from: {checkpoint_path}")
             checkpoint = torch.load(checkpoint_path, map_location='cpu')
@@ -479,6 +507,7 @@ def parse_args():
     parser.add_argument('--batch-size', type=int, default=None, help='Batch size for training and validation (overrides config if set)')
     parser.add_argument('--accumulation_steps', type=int, default=None, help='Number of gradient accumulation steps (overrides config if set)')
     parser.add_argument('--max_step', type=int, default=None, help='Maximum number of training steps (adjusted for accumulation_steps)')
+    parser.add_argument('--max_num_checkpoints', type=int, default=3, help='Maximum number of step-based checkpoints to keep (excluding best.pt and epoch checkpoints)')
     parser.add_argument('--random-seed', type=int, default=2024)
     parser.add_argument('--log-step', type=int, default=100)
     parser.add_argument('--report-to', type=str, default='none', choices=['tensorboard', 'log_file', 'wandb', 'none'], 
