@@ -266,7 +266,7 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                     loss_info = f'Train Loss: {losses / args.log_step:.6f}'
                     lr = optimizer.param_groups[0]['lr']
                     lr_info = f'Learning Rate: {lr:.6f}'
-                    log_message = f'{current_time}\n{epoch_info}    {batch_info}    {loss_info}    {lr_info}\n'
+                    log_message = f'\n{current_time}\n{epoch_info}    {batch_info}    {loss_info}    {lr_info}\n'
                     if args.report_to == 'tensorboard' and SummaryWriter is not None:
                         writer.add_scalar('Loss/train', losses / args.log_step, global_step)
                         writer.add_scalar('Learning_Rate', lr, global_step)
@@ -280,7 +280,7 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                 # Perform validation
                 if global_step % args.val_step == 0 and global_step > 0:
                     val_loss = validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_scheduler, params, accelerator, args)
-                    val_log_message = f'{current_time}\n{epoch_info}    {batch_info}    Validation Loss: {val_loss:.6f}\n'
+                    val_log_message = f'\n{current_time}\n{epoch_info}    {batch_info}    Validation Loss: {val_loss:.6f}\n'
                     if args.report_to == 'tensorboard' and SummaryWriter is not None:
                         writer.add_scalar('Loss/validation', val_loss, global_step)
                     elif args.report_to == 'wandb' and wandb is not None:
@@ -289,27 +289,41 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
                         with open(log_file, mode='a') as f:
                             f.write(val_log_message)
                     print(val_log_message)
-            # Save model checkpoints
-            if (global_step + 1) % args.save_every_step == 0:
-                if accelerator.is_main_process:
-                    ckpt_file_path = os.path.join(args.save_dir, f"step_{global_step+1}.pt")
-                    unwrapped_unet = accelerator.unwrap_model(unet)
-                    accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
-                    # Save training metadata
-                    metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
-                    accelerator.save({"global_step": global_step, "epoch": epoch}, metadata_file)
-                    # Save full accelerator state
-                    accelerator.save_state(os.path.join(args.save_dir, f"state_{global_step+1}"))
-                    print(f"Model checkpoint successfully saved to: {ckpt_file_path}")
-                accelerator.wait_for_everyone()
-                unet.train()
+                # Save model checkpoints for periodic steps
+                if (global_step + 1) % args.save_every_step == 0:
+                    if accelerator.is_main_process:
+                        ckpt_file_path = os.path.join(args.save_dir, f"step_{global_step+1}.pt")
+                        unwrapped_unet = accelerator.unwrap_model(unet)
+                        accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
+                        # Save training metadata
+                        metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
+                        accelerator.save({"global_step": global_step, "epoch": epoch}, metadata_file)
+                        # Save full accelerator state
+                        accelerator.save_state(os.path.join(args.save_dir, f"state_{global_step+1}"))
+                        print(f"\nModel checkpoint successfully saved to: {ckpt_file_path}")
+                    accelerator.wait_for_everyone()
+                    unet.train()
+        
+        # Save model checkpoint at the end of each epoch
+        if accelerator.is_main_process:
+            ckpt_file_path = os.path.join(args.save_dir, f"epoch_{epoch+1}.pt")
+            unwrapped_unet = accelerator.unwrap_model(unet)
+            accelerator.save({"model": unwrapped_unet.state_dict()}, ckpt_file_path)
+            # Update training metadata
+            metadata_file = os.path.join(args.save_dir, 'training_metadata.pt')
+            accelerator.save({"global_step": global_step, "epoch": epoch + 1}, metadata_file)
+            # Save full accelerator state
+            accelerator.save_state(os.path.join(args.save_dir, f"state_epoch_{epoch+1}"))
+            print(f"\nEpoch {epoch+1} checkpoint successfully saved to: {ckpt_file_path}")
+        accelerator.wait_for_everyone()
+        unet.train()
+                
     if accelerator.is_main_process:
         # Close logging resources
         if args.report_to == 'tensorboard' and SummaryWriter is not None:
             writer.close()
         elif args.report_to == 'wandb' and wandb is not None:
             wandb.finish()
-
 
 # -------------------------------------------------------------------------- #
 #                     Additional Setup Functions                             #
