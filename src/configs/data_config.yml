@@ -22,7 +22,27 @@ sr: 16000 # 24000
 val:
   data_dir: 'data/amaai-lab-MusicBench/val/'
   meta_dir: 'data/amaai-lab-MusicBench/val.csv'
+  subset: 'val'
+  fine_tune: false
+  seg_length: 10
+  sr: 16000 # 24000
+  aug_config:
+    phase180:
+        p: 0.5
+  mono: false
+  norm: true
+  prepare_mode: false # false
   
 test:
   data_dir: 'data/amaai-lab-MusicBench/test/'
   meta_dir: 'data/amaai-lab-MusicBench/test.csv'
+  subset: 'test'
+  fine_tune: false
+  seg_length: 10
+  sr: 16000 # 24000
+  aug_config:
+    phase180:
+        p: 0.5
+  mono: false
+  norm: true
+  prepare_mode: false # false
