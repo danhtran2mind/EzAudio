@@ -183,7 +183,7 @@ def validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_sched
             val_loss += loss.item()
             val_steps += 1
     return val_loss / val_steps if val_steps > 0 else 0.0
-
+    
 
 # -------------------------------------------------------------------------- #
 #                    Refactored Training-Related Functions                   #
@@ -289,7 +289,7 @@ def save_epoch_checkpoint(unet, global_step, epoch, args, accelerator):
     print(f"\nEpoch {epoch+1} checkpoint successfully saved to: {ckpt_file_path}")
 
 
-def process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, noise_scheduler, optimizer, lr_scheduler, params, args, accumulation_steps):
+def process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, noise_scheduler, optimizer, lr_scheduler, params, args, accumulation_steps, accelerator):
     """Process a single training step, including forward pass and backpropagation."""
     with accelerator.accumulate(unet):
         if args.offline:
@@ -331,7 +331,7 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
         unet.train()
         for step, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")):
             loss = process_training_step(unet, batch, autoencoder, tokenizer, text_encoder, 
-                                        noise_scheduler, optimizer, lr_scheduler, params, args, accumulation_steps)
+                                        noise_scheduler, optimizer, lr_scheduler, params, args, accumulation_steps, accelerator)
             global_step += 1 / accumulation_steps
             losses += loss
             if global_step % args.log_step == 0:
@@ -362,7 +362,6 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         close_logging(writer, args)
-
 
 def setup_dataset_and_loaders(args, params):
     """Initialize datasets and data loaders for training and validation."""
