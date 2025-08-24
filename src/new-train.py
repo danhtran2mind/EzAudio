@@ -370,7 +370,7 @@ def load_checkpoint(unet, args, accelerator):
 def parse_args():
     """Parse command-line arguments for training configuration."""
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config-name', type=str, default='config/ezaudio-l.yml')
+    parser.add_argument('--config-name', type=str, default='src/configs/ezaudio-l.yml')
     parser.add_argument("--amp", type=str, default='fp16')
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--num-workers', type=int, default=16)
