@@ -218,25 +218,31 @@ if __name__ == '__main__':
 
     # main U-Net
     unet = MaskDiT(**params['model']).to(accelerator.device)
-
+    
     # Load the state dict from pretrained model
     if args.ckpt:
         state_dict = torch.load(args.ckpt, map_location='cpu')['model']
-    # Load the state dict into the model
-    result = unet.load_state_dict(state_dict, strict=args.strict)
-
+        # Load the state dict into the model
+        result = unet.load_state_dict(state_dict, strict=args.strict)
+    
+        if accelerator.is_main_process:
+            # Check for missing keys and unexpected keys
+            if result.missing_keys:
+                print("Warning: The following layers were not loaded because they are missing in the checkpoint:")
+                for key in result.missing_keys:
+                    print(f" - {key}")
+            if result.unexpected_keys:
+                print("Warning: The following layers were not expected in the model and thus were not loaded:")
+                for key in result.unexpected_keys:
+                    print(f" - {key}")
+    else:
+        if accelerator.is_main_process:
+            print("No checkpoint provided, training from scratch.")
+    
     if accelerator.is_main_process:
-        # Check for missing keys and unexpected keys
-        if result.missing_keys:
-            print("Warning: The following layers were not loaded because they are missing in the checkpoint:")
-            for key in result.missing_keys:
-                print(f" - {key}")
-        if result.unexpected_keys:
-            print("Warning: The following layers were not expected in the model and thus were not loaded:")
-            for key in result.unexpected_keys:
-                print(f" - {key}")   
         total_params = sum([param.nelement() for param in unet.parameters()])
         print("Number of parameter: %.2fM" % (total_params / 1e6))
+        
     accelerator.wait_for_everyone()
 
     noise_scheduler = DDIMScheduler(**params['diff'])
