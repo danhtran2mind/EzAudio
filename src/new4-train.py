@@ -374,11 +374,15 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
             if global_step % args.val_step == 0 and global_step > 0:
                 val_loss = validate(unet, val_loader, autoencoder, tokenizer, text_encoder, noise_scheduler, params, accelerator, args)
                 log_validation_progress(args, global_step, epoch, val_loss, log_file, writer, accelerator)
+                print(f"Saving checkpoint at global step {global_step}")
                 best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, val_loss, accumulation_steps)
+                print(f"Checkpoint saved at global step {global_step}")
                 accelerator.wait_for_everyone()
                 unet.train()
             elif (global_step * accumulation_steps) % args.save_step == 0 and global_step > 0:
+                print(f"Saving checkpoint at global step {global_step}")
                 best_loss = save_checkpoint(unet, optimizer, lr_scheduler, global_step, epoch, args, accelerator, best_loss, None, accumulation_steps)
+                print(f"Checkpoint saved at global step {global_step}")
                 accelerator.wait_for_everyone()
                 unet.train()
             
@@ -388,7 +392,9 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
             # Check if max_step is reached
             if args.max_step is not None and global_step >= args.max_step:
                 print(f"Reached maximum step {args.max_step}. Stopping training.")
+                print(f"Saving final epoch checkpoint at global step {global_step}")
                 save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
+                print(f"Final epoch checkpoint saved at global step {global_step}")
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
                     close_logging(writer, args)
@@ -398,7 +404,9 @@ def train(unet, train_loader, val_loader, autoencoder, tokenizer, text_encoder,
         progress_bar.close()
     
     # Save final epoch checkpoint when training completes
+    print(f"Saving final epoch checkpoint at global step {global_step}")
     save_epoch_checkpoint(unet, global_step, epoch, args, accelerator)
+    print(f"Final epoch checkpoint saved at global step {global_step}")
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         close_logging(writer, args)
