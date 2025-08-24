@@ -25,7 +25,7 @@ model:
   ada_sola_rank: 20
   ada_sola_alpha: 20
   cls_dim: null
-  context_dim: 384
+  context_dim: 512  # Changed from 384 to 512 to match flan-t5-small
   context_fusion: 'cross'
   context_max_length: null
   context_pe_method: 'none'
